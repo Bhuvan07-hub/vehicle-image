@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+      - ./data:/app/data
+    environment:
+      - STORAGE_DIR=/app/storage
+      - DB_PATH=/app/data/pipeline.db
+      - QUEUE_WORKER_COUNT=2

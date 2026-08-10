@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+pipeline.db
+pipeline.db-wal
+pipeline.db-shm
+storage/*
+!storage/.gitkeep
+.pytest_cache/
+*.egg-info/
+venv/
+.venv/
