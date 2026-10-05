@@ -1,9 +1,11 @@
 import io
 import logging
+import os
 import uuid
 from typing import List
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 
 from app import repository
@@ -151,4 +153,21 @@ def get_image_result(image_id: str):
         overall_risk_score=result["overall_risk_score"],
         checks=result["checks"],
         created_at=result["created_at"],
+    )
+
+
+@router.get("/{image_id}/file")
+def get_image_file(image_id: str):
+    record = repository.get_image(image_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"no image found with id '{image_id}'")
+
+    file_path = record["file_path"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="image record exists but the file is missing from storage")
+
+    return FileResponse(
+        file_path,
+        media_type=record["content_type"] or "application/octet-stream",
+        filename=record["original_filename"],
     )

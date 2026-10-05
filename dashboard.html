@@ -48,9 +48,11 @@
 
   table{width:100%;border-collapse:collapse;margin-top:4px}
   thead th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line)}
-  tbody td{padding:10px;border-bottom:1px solid var(--line);font-size:13px}
+  tbody td{padding:10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
   tbody tr{cursor:pointer}
   tbody tr:hover td{background:var(--panel2)}
+  .thumb{width:38px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--line);display:block;background:var(--panel2)}
+  .thumb-lg{width:100%;max-height:360px;object-fit:contain;border-radius:6px;border:1px solid var(--line);background:var(--bg);display:block;margin-bottom:16px}
   .mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
 
   .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.02em}
@@ -133,8 +135,8 @@
         <button id="exportBtn" style="all:unset;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:7px 14px;font-size:12px;color:var(--text)">Export CSV</button>
       </div>
       <table>
-        <thead><tr><th>Status</th><th>Filename</th><th>ID</th><th>Risk</th><th>Uploaded</th></tr></thead>
-        <tbody id="queueBody"><tr><td colspan="5" class="empty">No images yet — upload one first.</td></tr></tbody>
+        <thead><tr><th></th><th>Status</th><th>Filename</th><th>ID</th><th>Risk</th><th>Uploaded</th></tr></thead>
+        <tbody id="queueBody"><tr><td colspan="6" class="empty">No images yet — upload one first.</td></tr></tbody>
       </table>
       <div id="queueDetail"></div>
     </section>
@@ -294,9 +296,10 @@ function renderQueue(){
   const rows = [...items.values()].sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
   updateStats(rows);
   const body = $('#queueBody');
-  if(!rows.length){ body.innerHTML = '<tr><td colspan="5" class="empty">No images yet — upload one first.</td></tr>'; return; }
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="6" class="empty">No images yet — upload one first.</td></tr>'; return; }
   body.innerHTML = rows.map(r=>`
     <tr data-id="${r.id}">
+      <td><img class="thumb" src="${api('/api/v1/images/'+r.id+'/file')}" loading="lazy" onerror="this.style.visibility='hidden'"></td>
       <td>${badge(r.status)}</td>
       <td>${esc(r.original_filename||'—')}</td>
       <td class="mono">${r.id.slice(0,8)}…</td>
@@ -355,6 +358,7 @@ function detailPanel(rec){
   }
   return `<div class="panel">
     <div class="panel-head"><h3>${esc(rec.original_filename||rec.id)}</h3>${badge(rec.status)}</div>
+    <img class="thumb-lg" src="${api('/api/v1/images/'+rec.id+'/file')}" loading="lazy" onerror="this.style.display='none'">
     ${body}
   </div>`;
 }

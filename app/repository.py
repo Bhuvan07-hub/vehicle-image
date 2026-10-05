@@ -215,4 +215,4 @@ def get_export_rows() -> list[dict]:
             d["issues_detected"] = json.loads(d["issues_detected"]) if d["issues_detected"] else []
             out.append(d)
         return out
-s
+
