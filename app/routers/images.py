@@ -1,6 +1,7 @@
 import io
 import logging
 import uuid
+from typing import List
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from PIL import Image, UnidentifiedImageError
@@ -11,6 +12,8 @@ from app.config import ALLOWED_CONTENT_TYPES, MAX_UPLOAD_SIZE_BYTES
 from app.queue_worker import enqueue
 from app.schemas import (
     AnalysisResultResponse,
+    BatchUploadItem,
+    BatchUploadResponse,
     ImageListResponse,
     ImageStatusResponse,
     UploadResponse,
@@ -21,8 +24,12 @@ logger = logging.getLogger("images_router")
 router = APIRouter(prefix="/api/v1/images", tags=["images"])
 
 
-@router.post("", response_model=UploadResponse, status_code=202)
-async def upload_image(file: UploadFile = File(...)):
+async def _save_and_enqueue(file: UploadFile) -> dict:
+    """Shared validation + persistence logic for a single file. Used by both
+    the single-upload and batch-upload endpoints so they can never drift —
+    one codepath decides what counts as a valid upload. Raises HTTPException
+    on any validation failure; the caller decides whether that's a hard
+    failure (single upload) or just one bad item in a batch."""
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=415,
@@ -41,8 +48,7 @@ async def upload_image(file: UploadFile = File(...)):
     try:
         pil_image = Image.open(io.BytesIO(data))
         pil_image.verify()
-        # re-open after verify() (verify() leaves the file unusable for further ops)
-        pil_image = Image.open(io.BytesIO(data))
+        pil_image = Image.open(io.BytesIO(data))  # re-open after verify()
         width, height = pil_image.size
         perceptual_hash = compute_dhash(pil_image)
     except UnidentifiedImageError:
@@ -70,7 +76,33 @@ async def upload_image(file: UploadFile = File(...)):
     logger.info("enqueued image_id=%s for processing", image_id)
 
     record = repository.get_image(image_id)
-    return UploadResponse(id=image_id, status=record["status"], created_at=record["created_at"])
+    return {"id": image_id, "status": record["status"], "created_at": record["created_at"]}
+
+
+@router.post("", response_model=UploadResponse, status_code=202)
+async def upload_image(file: UploadFile = File(...)):
+    result = await _save_and_enqueue(file)
+    return UploadResponse(**result)
+
+
+@router.post("/batch", response_model=BatchUploadResponse, status_code=202)
+async def upload_batch(files: List[UploadFile] = File(...)):
+    """Accepts multiple files in one request. Each file is validated and
+    enqueued independently — one bad file in the batch (wrong format, too
+    large, corrupt) doesn't block the rest. The response reports a per-file
+    outcome so the caller knows exactly which uploads succeeded and which
+    didn't, rather than an all-or-nothing failure."""
+    items: list[BatchUploadItem] = []
+    accepted = 0
+    for file in files:
+        try:
+            result = await _save_and_enqueue(file)
+            items.append(BatchUploadItem(filename=file.filename or "unknown", id=result["id"], status=result["status"]))
+            accepted += 1
+        except HTTPException as exc:
+            items.append(BatchUploadItem(filename=file.filename or "unknown", error=str(exc.detail)))
+
+    return BatchUploadResponse(accepted=accepted, rejected=len(files) - accepted, items=items)
 
 
 @router.get("", response_model=ImageListResponse)

@@ -147,3 +147,72 @@ def get_incomplete_image_ids() -> list[str]:
             "SELECT id FROM images WHERE status IN ('pending', 'processing') ORDER BY created_at ASC"
         ).fetchall()
         return [r["id"] for r in rows]
+
+import json
+
+from app.db import connection
+
+
+def get_analytics_summary() -> dict:
+    """Aggregate stats across every image ever processed: counts by status,
+    how often each issue code has fired, and the average risk score among
+    analyzed images. All computed from existing tables — no new storage
+    needed, since the data is already there."""
+    with connection() as conn:
+        status_rows = conn.execute(
+            "SELECT status, COUNT(*) as c FROM images GROUP BY status"
+        ).fetchall()
+        by_status = {r["status"]: r["c"] for r in status_rows}
+        total_images = sum(by_status.values())
+
+        result_rows = conn.execute(
+            "SELECT issues_detected, overall_risk_score FROM analysis_results"
+        ).fetchall()
+
+        issue_counts: dict[str, int] = {}
+        risk_scores: list[float] = []
+        clean_count = 0
+        for row in result_rows:
+            issues = json.loads(row["issues_detected"])
+            if not issues:
+                clean_count += 1
+            for issue in issues:
+                issue_counts[issue] = issue_counts.get(issue, 0) + 1
+            risk_scores.append(row["overall_risk_score"])
+
+        average_risk_score = round(sum(risk_scores) / len(risk_scores), 3) if risk_scores else 0.0
+        # Most-common issues first — this is what you'd actually want to see
+        # at a glance ("what's going wrong most often"), not an arbitrary order.
+        issue_frequency = dict(sorted(issue_counts.items(), key=lambda kv: kv[1], reverse=True))
+
+        return {
+            "total_images": total_images,
+            "by_status": by_status,
+            "analyzed_count": len(result_rows),
+            "clean_count": clean_count,
+            "average_risk_score": average_risk_score,
+            "issue_frequency": issue_frequency,
+        }
+
+
+def get_export_rows() -> list[dict]:
+    """One row per image, joined with its analysis result if it has one
+    (LEFT JOIN — a pending/processing/failed image still gets a row, just
+    with empty result fields). Used by the CSV export endpoint."""
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT i.id, i.original_filename, i.status, i.created_at, i.error_message,
+                   r.issues_detected, r.overall_risk_score
+            FROM images i
+            LEFT JOIN analysis_results r ON r.image_id = i.id
+            ORDER BY i.created_at DESC
+            """
+        ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["issues_detected"] = json.loads(d["issues_detected"]) if d["issues_detected"] else []
+            out.append(d)
+        return out
+s

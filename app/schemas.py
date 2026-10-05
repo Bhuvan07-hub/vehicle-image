@@ -55,3 +55,29 @@ class ImageListResponse(BaseModel):
     items: list[ImageListItem]
     limit: int
     offset: int
+
+from typing import Optional
+from pydantic import BaseModel
+
+
+class BatchUploadItem(BaseModel):
+    filename: str
+    id: Optional[str] = None
+    status: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BatchUploadResponse(BaseModel):
+    accepted: int
+    rejected: int
+    items: list[BatchUploadItem]
+
+
+class AnalyticsSummaryResponse(BaseModel):
+    total_images: int
+    by_status: dict[str, int]
+    analyzed_count: int
+    clean_count: int
+    average_risk_score: float
+    issue_frequency: dict[str, int]
+

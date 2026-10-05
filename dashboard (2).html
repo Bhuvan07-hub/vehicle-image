@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspection Terminal — Vehicle Image Pipeline</title>
+<style>
+  :root{
+    --bg:#15171B; --panel:#1C1F24; --panel2:#23262C; --line:#2E323A;
+    --text:#E9EAEC; --muted:#8A8F98; --amber:#F2A33C; --amber-dim:#5A4426;
+    --green:#3FCB7E; --green-dim:#1E3A2C; --red:#FF5C5C; --red-dim:#3A2020;
+    --blue:#5CA7F2; --blue-dim:#1E2E3A; --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+  .side{background:var(--panel);border-right:1px solid var(--line);padding:20px 0;display:flex;flex-direction:column}
+  .brand{padding:0 20px 20px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .brand .mark{width:10px;height:10px;background:var(--amber);display:inline-block;margin-right:8px;transform:rotate(45deg)}
+  .brand h1{font-size:14px;letter-spacing:.02em;margin:0 0 2px;font-weight:600}
+  .brand p{margin:0;color:var(--muted);font-size:11px}
+  nav{display:flex;flex-direction:column;gap:2px;padding:0 10px}
+  nav button{all:unset;cursor:pointer;padding:9px 10px;border-radius:4px;color:var(--muted);font-size:13px}
+  nav button:hover{background:var(--panel2);color:var(--text)}
+  nav button.active{background:var(--panel2);color:var(--amber)}
+  .side-foot{margin-top:auto;padding:14px 20px 0;border-top:1px solid var(--line)}
+  .api-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:8px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .dot.ok{background:var(--green)}
+  .api-row input{all:unset;width:100%;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 7px;font-family:var(--mono);font-size:11px;color:var(--text)}
+
+  main{padding:28px 36px;max-width:1100px}
+  h2{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12px;margin:0 0 22px}
+
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+  .stat .n{font-family:var(--mono);font-size:22px;font-weight:600}
+  .stat .l{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+
+  .drop{border:1.5px dashed var(--line);border-radius:8px;padding:40px 20px;text-align:center;cursor:pointer;background:var(--panel);transition:border-color .15s}
+  .drop:hover,.drop.drag{border-color:var(--amber)}
+  .drop .ic{font-size:26px;margin-bottom:10px;color:var(--amber)}
+  .drop p{margin:0;color:var(--muted);font-size:13px}
+  .drop p b{color:var(--text)}
+  input[type=file]{display:none}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px}
+  thead th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line)}
+  tbody td{padding:10px;border-bottom:1px solid var(--line);font-size:13px}
+  tbody tr{cursor:pointer}
+  tbody tr:hover td{background:var(--panel2)}
+  .mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.02em}
+  .badge .d{width:6px;height:6px;border-radius:50%}
+  .b-pending{background:var(--amber-dim);color:var(--amber)} .b-pending .d{background:var(--amber)}
+  .b-processing{background:var(--blue-dim);color:var(--blue)} .b-processing .d{background:var(--blue)}
+  .b-completed{background:var(--green-dim);color:var(--green)} .b-completed .d{background:var(--green)}
+  .b-failed{background:var(--red-dim);color:var(--red)} .b-failed .d{background:var(--red)}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;margin-top:18px}
+  .panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+  .panel-head h3{margin:0;font-size:14px;font-family:var(--mono)}
+  .riskbar{height:5px;border-radius:3px;background:var(--panel2);overflow:hidden;margin:10px 0 18px}
+  .riskbar i{display:block;height:100%;background:var(--amber)}
+  .issue-chip{display:inline-block;background:var(--red-dim);color:var(--red);border-radius:4px;padding:3px 9px;font-size:11px;font-family:var(--mono);margin:0 6px 6px 0}
+  .issue-chip.none{background:var(--green-dim);color:var(--green)}
+
+  .check{border-top:1px solid var(--line);padding:12px 0}
+  .check:first-of-type{border-top:none}
+  .check-top{display:flex;align-items:center;justify-content:space-between;cursor:pointer}
+  .check-name{font-size:13px;font-weight:600}
+  .check-conf{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .check-bar{height:3px;background:var(--panel2);border-radius:2px;margin-top:7px;overflow:hidden}
+  .check-bar i{display:block;height:100%}
+  .pass i{background:var(--green)} .fail i{background:var(--red)}
+  .check-metrics{display:none;font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg);border-radius:4px;padding:10px;margin-top:9px;white-space:pre-wrap;word-break:break-word}
+  .check.open .check-metrics{display:block}
+
+  .empty{color:var(--muted);font-size:13px;padding:30px 0;text-align:center}
+  .freq-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--line)}
+  .freq-row:first-child{border-top:none}
+  .freq-name{width:220px;font-family:var(--mono);font-size:12px;flex-shrink:0}
+  .freq-track{flex:1;height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+  .freq-track i{display:block;height:100%;background:var(--amber)}
+  .freq-count{width:34px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .view{display:none} .view.active{display:block}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--amber);padding:10px 16px;border-radius:4px;font-size:12px;max-width:320px;display:none}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><h1><span class="mark"></span>Inspection Terminal</h1><p>vehicle image pipeline</p></div>
+    <nav>
+      <button class="nav-btn active" data-view="upload">Upload</button>
+      <button class="nav-btn" data-view="queue">Queue &amp; Results</button>
+      <button class="nav-btn" data-view="analytics">Analytics</button>
+    </nav>
+    <div class="side-foot">
+      <div class="api-row"><span class="dot" id="apiDot"></span><span id="apiLabel">checking…</span></div>
+      <input id="baseUrl" value="http://127.0.0.1:8000" spellcheck="false">
+    </div>
+  </aside>
+
+  <main>
+    <section id="view-upload" class="view active">
+      <h2>Upload an image</h2>
+      <p class="sub">Submits to <span class="mono">POST /api/v1/images</span>, then watches it move through the queue.</p>
+
+      <div class="stat-row" id="statRow">
+        <div class="stat"><div class="n" id="sPending">0</div><div class="l">Pending</div></div>
+        <div class="stat"><div class="n" id="sProcessing">0</div><div class="l">Processing</div></div>
+        <div class="stat"><div class="n" id="sCompleted">0</div><div class="l">Completed</div></div>
+        <div class="stat"><div class="n" id="sFailed">0</div><div class="l">Failed</div></div>
+      </div>
+
+      <div class="drop" id="drop">
+        <div class="ic">▲</div>
+        <p><b>Drop one or more images here</b> or click to browse</p>
+        <p style="margin-top:4px">JPEG, PNG, or WebP — multiple files upload as a batch</p>
+        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" multiple>
+      </div>
+
+      <div id="liveResult"></div>
+    </section>
+
+    <section id="view-queue" class="view">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div><h2>Queue &amp; results</h2><p class="sub">All uploads this session has seen. Click a row for the full check breakdown.</p></div>
+        <button id="exportBtn" style="all:unset;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:7px 14px;font-size:12px;color:var(--text)">Export CSV</button>
+      </div>
+      <table>
+        <thead><tr><th>Status</th><th>Filename</th><th>ID</th><th>Risk</th><th>Uploaded</th></tr></thead>
+        <tbody id="queueBody"><tr><td colspan="5" class="empty">No images yet — upload one first.</td></tr></tbody>
+      </table>
+      <div id="queueDetail"></div>
+    </section>
+
+    <section id="view-analytics" class="view">
+      <h2>Analytics</h2>
+      <p class="sub">Aggregated across every image the backend has processed — not just this browser session.</p>
+      <div class="stat-row" id="analyticsStats">
+        <div class="stat"><div class="n" id="aTotal">—</div><div class="l">Total images</div></div>
+        <div class="stat"><div class="n" id="aAnalyzed">—</div><div class="l">Analyzed</div></div>
+        <div class="stat"><div class="n" id="aClean">—</div><div class="l">Clean (no issues)</div></div>
+        <div class="stat"><div class="n" id="aAvgRisk">—</div><div class="l">Avg risk score</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Issue frequency</h3></div>
+        <div id="issueFreq"><p class="empty">No analyzed images yet.</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const items = new Map(); // id -> record
+let currentBase = $('#baseUrl').value.trim();
+
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',3500); }
+function api(path){ return currentBase.replace(/\/$/,'') + path; }
+
+$('#baseUrl').addEventListener('change', e => { currentBase = e.target.value.trim(); pingHealth(); });
+
+async function pingHealth(){
+  try{
+    const r = await fetch(api('/health'));
+    if(!r.ok) throw 0;
+    $('#apiDot').classList.add('ok'); $('#apiLabel').textContent = 'API online';
+  }catch{
+    $('#apiDot').classList.remove('ok'); $('#apiLabel').textContent = 'API unreachable';
+  }
+}
+pingHealth(); setInterval(pingHealth, 8000);
+
+// nav
+document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); $('#view-'+b.dataset.view).classList.add('active');
+  if(b.dataset.view === 'analytics') loadAnalytics();
+}));
+
+async function loadAnalytics(){
+  try{
+    const r = await fetch(api('/api/v1/analytics/summary'));
+    if(!r.ok) throw 0;
+    const s = await r.json();
+    $('#aTotal').textContent = s.total_images;
+    $('#aAnalyzed').textContent = s.analyzed_count;
+    $('#aClean').textContent = s.clean_count;
+    $('#aAvgRisk').textContent = s.average_risk_score;
+    const entries = Object.entries(s.issue_frequency);
+    const max = entries.length ? Math.max(...entries.map(e=>e[1])) : 1;
+    $('#issueFreq').innerHTML = entries.length
+      ? entries.map(([name,count])=>`
+          <div class="freq-row">
+            <div class="freq-name">${esc(name)}</div>
+            <div class="freq-track"><i style="width:${Math.round(count/max*100)}%"></i></div>
+            <div class="freq-count">${count}</div>
+          </div>`).join('')
+      : '<p class="empty">No analyzed images yet.</p>';
+  }catch{
+    toast('Could not load analytics — check API connection.');
+  }
+}
+
+// upload — single file keeps the old live-tracking panel; 2+ files go through
+// the batch endpoint and each tracked row appears in the queue table.
+const drop = $('#drop'), fileInput = $('#fileInput');
+drop.addEventListener('click', ()=>fileInput.click());
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop', e=>{ handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', e=>{ handleFiles(e.target.files); fileInput.value=''; });
+
+function handleFiles(fileList){
+  const files = [...fileList];
+  if(!files.length) return;
+  if(files.length === 1) handleUpload(files[0]);
+  else handleBatchUpload(files);
+}
+
+async function handleBatchUpload(files){
+  $('#liveResult').innerHTML = `<div class="panel"><div class="panel-head"><h3>Uploading batch of ${files.length}</h3><span class="badge b-pending"><span class="d"></span>uploading</span></div></div>`;
+  const fd = new FormData();
+  files.forEach(f => fd.append('files', f));
+  try{
+    const res = await fetch(api('/api/v1/images/batch'), { method:'POST', body: fd });
+    const body = await res.json();
+    if(!res.ok){ toast('Batch upload failed: ' + (body.detail||res.status)); return; }
+    body.items.forEach(item=>{
+      if(item.id){
+        items.set(item.id, { id:item.id, original_filename:item.filename, status:item.status, created_at:new Date().toISOString(), result:null });
+        pollImage(item.id, false);
+      }
+    });
+    renderQueue();
+    $('#liveResult').innerHTML = `<div class="panel"><div class="panel-head"><h3>Batch submitted</h3></div><p class="sub">${body.accepted} accepted, ${body.rejected} rejected. Switch to "Queue &amp; Results" to track them.</p>${body.items.filter(i=>i.error).map(i=>`<p style="color:var(--red);font-size:12px">${esc(i.filename)}: ${esc(i.error)}</p>`).join('')}</div>`;
+  }catch(err){ toast('Could not reach API at ' + currentBase); }
+}
+
+$('#exportBtn').addEventListener('click', ()=>{
+  window.open(api('/api/v1/analytics/export'), '_blank');
+});
+
+async function handleUpload(file){
+  $('#liveResult').innerHTML = `<div class="panel"><div class="panel-head"><h3>${esc(file.name)}</h3><span class="badge b-pending"><span class="d"></span>uploading</span></div></div>`;
+  const fd = new FormData(); fd.append('file', file);
+  try{
+    const res = await fetch(api('/api/v1/images'), { method:'POST', body: fd });
+    const body = await res.json();
+    if(!res.ok){ toast('Upload rejected: ' + (body.detail||res.status)); return; }
+    const rec = { id: body.id, original_filename: file.name, status: body.status, created_at: body.created_at, result: null };
+    items.set(body.id, rec);
+    renderQueue();
+    pollImage(body.id, true);
+  }catch(err){ toast('Could not reach API at ' + currentBase); }
+}
+
+async function pollImage(id, showLive){
+  const tick = async () => {
+    const rec = items.get(id); if(!rec) return;
+    try{
+      const r = await fetch(api('/api/v1/images/'+id));
+      const body = await r.json();
+      rec.status = body.status; rec.error_message = body.error_message;
+      renderQueue();
+      if(showLive) renderLive(rec);
+      if(body.status === 'completed'){
+        const rr = await fetch(api('/api/v1/images/'+id+'/result'));
+        rec.result = await rr.json();
+        renderQueue(); if(showLive) renderLive(rec);
+        return;
+      }
+      if(body.status === 'failed'){ if(showLive) renderLive(rec); return; }
+      setTimeout(tick, 900);
+    }catch{ setTimeout(tick, 1500); }
+  };
+  tick();
+}
+
+function renderLive(rec){
+  $('#liveResult').innerHTML = detailPanel(rec);
+  wireChecks($('#liveResult'));
+}
+
+function renderQueue(){
+  const rows = [...items.values()].sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+  updateStats(rows);
+  const body = $('#queueBody');
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="5" class="empty">No images yet — upload one first.</td></tr>'; return; }
+  body.innerHTML = rows.map(r=>`
+    <tr data-id="${r.id}">
+      <td>${badge(r.status)}</td>
+      <td>${esc(r.original_filename||'—')}</td>
+      <td class="mono">${r.id.slice(0,8)}…</td>
+      <td class="mono">${r.result ? r.result.overall_risk_score : '—'}</td>
+      <td class="mono">${r.created_at ? new Date(r.created_at).toLocaleTimeString() : '—'}</td>
+    </tr>`).join('');
+  body.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const rec = items.get(tr.dataset.id);
+      $('#queueDetail').innerHTML = detailPanel(rec);
+      wireChecks($('#queueDetail'));
+    });
+  });
+}
+
+function updateStats(rows){
+  const c = {pending:0,processing:0,completed:0,failed:0};
+  rows.forEach(r=>{ if(c[r.status]!==undefined) c[r.status]++; });
+  $('#sPending').textContent = c.pending; $('#sProcessing').textContent = c.processing;
+  $('#sCompleted').textContent = c.completed; $('#sFailed').textContent = c.failed;
+}
+
+function badge(status){
+  const label = {pending:'pending',processing:'processing',completed:'completed',failed:'failed'}[status]||status;
+  return `<span class="badge b-${status}"><span class="d"></span>${label}</span>`;
+}
+
+function detailPanel(rec){
+  if(!rec) return '';
+  let body = '';
+  if(rec.status === 'failed'){
+    body = `<p style="color:var(--red);font-size:13px">${esc(rec.error_message||'Processing failed.')}</p>`;
+  } else if(rec.status !== 'completed'){
+    body = `<p class="sub">Still ${rec.status} — this updates automatically.</p>`;
+  } else if(rec.result){
+    const res = rec.result;
+    const issues = res.issues_detected.length
+      ? res.issues_detected.map(i=>`<span class="issue-chip">${esc(i)}</span>`).join('')
+      : `<span class="issue-chip none">no issues detected</span>`;
+    const checks = res.checks.map(c=>{
+      const pct = Math.round((c.confidence||0)*100);
+      const cls = c.issue_detected ? 'fail' : 'pass';
+      return `<div class="check">
+        <div class="check-top">
+          <span class="check-name">${esc(c.check)}</span>
+          <span class="check-conf">${c.issue_detected===null?'error':(c.issue_detected?'flagged':'clear')} · ${pct}%</span>
+        </div>
+        <div class="check-bar ${cls}"><i style="width:${pct}%"></i></div>
+        <div class="check-metrics">${esc(JSON.stringify(c.metrics, null, 2))}</div>
+      </div>`;
+    }).join('');
+    body = `
+      <div>${issues}</div>
+      <div class="riskbar"><i style="width:${Math.round((res.overall_risk_score||0)*100)}%"></i></div>
+      ${checks}`;
+  }
+  return `<div class="panel">
+    <div class="panel-head"><h3>${esc(rec.original_filename||rec.id)}</h3>${badge(rec.status)}</div>
+    ${body}
+  </div>`;
+}
+
+function wireChecks(scope){
+  scope.querySelectorAll('.check-top').forEach(h=>{
+    h.addEventListener('click', ()=> h.parentElement.classList.toggle('open'));
+  });
+}
+
+function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+renderQueue();
+</script>
+</body>
+</html>

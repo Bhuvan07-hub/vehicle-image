@@ -2,11 +2,13 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.db import init_db
 from app.queue_worker import start_workers, stop_workers
 from app.routers.images import router as images_router
+from app.routers.analytics import router as analytics_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +35,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(images_router)
+app.include_router(analytics_router)
 
 
 @app.get("/health", tags=["health"])
